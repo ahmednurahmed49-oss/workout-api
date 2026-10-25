@@ -1,6 +1,8 @@
 from datetime import date
 
-from app import db
+from sqlalchemy.orm import validates
+
+from extensions import db
 
 
 class Workout(db.Model):
@@ -10,12 +12,24 @@ class Workout(db.Model):
     name = db.Column(db.String(100), nullable=False)
     date = db.Column(db.Date, nullable=False, default=date.today)
 
-    # Relationship: one workout can have many exercise entries
+    # One workout can contain multiple exercise entries.
     exercises = db.relationship(
         "WorkoutExercise",
         back_populates="workout",
         cascade="all, delete-orphan"
     )
+
+    @validates("name")
+    def validate_name(self, key, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("Workout name cannot be empty")
+
+        value = value.strip()
+
+        if len(value) > 100:
+            raise ValueError("Workout name cannot exceed 100 characters")
+
+        return value
 
     def __repr__(self):
         return f"<Workout {self.name}>"
@@ -28,12 +42,25 @@ class Exercise(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True)
     description = db.Column(db.String(255), nullable=False)
 
-    # Relationship: one exercise can appear in many workouts
+    # One exercise can be reused in multiple workouts.
     workouts = db.relationship(
         "WorkoutExercise",
         back_populates="exercise",
         cascade="all, delete-orphan"
     )
+
+    @validates("name", "description")
+    def validate_text(self, key, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{key.capitalize()} cannot be empty")
+
+        value = value.strip()
+        max_length = 100 if key == "name" else 255
+
+        if len(value) > max_length:
+            raise ValueError(f"{key.capitalize()} cannot exceed {max_length} characters")
+
+        return value
 
     def __repr__(self):
         return f"<Exercise {self.name}>"
@@ -42,7 +69,6 @@ class Exercise(db.Model):
 class WorkoutExercise(db.Model):
     __tablename__ = "workout_exercises"
 
-    # Database constraints go here, inside the class
     __table_args__ = (
         db.UniqueConstraint(
             "workout_id",
@@ -81,7 +107,7 @@ class WorkoutExercise(db.Model):
     reps = db.Column(db.Integer, nullable=True)
     duration_minutes = db.Column(db.Integer, nullable=True)
 
-    # Relationships back to the parent models
+    # Relationships back to the parent models.
     workout = db.relationship(
         "Workout",
         back_populates="exercises"
@@ -91,3 +117,20 @@ class WorkoutExercise(db.Model):
         "Exercise",
         back_populates="workouts"
     )
+
+    @validates("sets", "reps", "duration_minutes")
+    def validate_positive_values(self, key, value):
+        if value is not None and (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value <= 0
+        ):
+            raise ValueError(f"{key.capitalize()} must be a positive integer")
+
+        return value
+
+    def __repr__(self):
+        return (
+            f"<WorkoutExercise workout_id={self.workout_id} "
+            f"exercise_id={self.exercise_id}>"
+        )
